@@ -977,6 +977,163 @@ function __construct() {
 
 $profileg = new profileg();
 
-class jobs{
+class profilej{
+  function __construct() {
+    add_action('rest_api_init', array($this, 'profilej'));
   
+    }
+    function profilej() {
+      register_rest_route(
+          'Voxel/v1',
+          '/profilej/(?P<user_id>\d+)',
+          array(
+              'methods' => 'GET',
+              'callback' => array($this, 'getall'),
+          )
+      );
+    }
+    function getall($request) {
+      $user_id = $request->get_param('user_id');// Get the user ID from the request
+      
+      $listings = $this->get_listings_for_user($user_id);
+
+      return rest_ensure_response($listings);
+    }
+    function get_listings_for_user($user_id) {
+      global $wpdb;
+        // $args = array(
+        //     'post_type' => 'places',
+        //     'post_author'=> $user_id,
+        //      'posts_per_page' => -1,
+        // );
+        // $listings_query = new \WP_Query($args);
+        // var_dump($listings_query->request);
+        // die;
+        $query = "SELECT *
+                  FROM wp_posts
+                  WHERE 1=1
+                      AND wp_posts.post_type = 'jobs'
+                      AND wp_posts.post_author = $user_id
+                      AND wp_posts.post_status = 'publish'
+                  ORDER BY wp_posts.post_date DESC";
+        $results = $wpdb->get_results( $query );
+        $listings = array();
+        foreach ($results as $result) {
+          $featured_image_id = get_post_thumbnail_id($result->ID);
+          if ($featured_image_id) {
+              $featured_image_data = wp_get_attachment_image_src($featured_image_id, 'full');
+              if (is_array($featured_image_data)) {
+                  $result->featured_image_url = $featured_image_data[0];
+              }
+          }
+          $profile_logo = get_post_meta($result->ID, 'logo', true);
+          if ($profile_logo) {
+              $result->profile_logo_url = wp_get_attachment_url($profile_logo);
+          }
+          $listings[] = $result;
+      }
+      
+      return $listings;
+       
+    }
 }
+$profilej= new profilej();
+
+class profilee{
+  function __construct() {
+    add_action('rest_api_init', array($this, 'profilee'));
+  
+    }
+    function profilee() {
+      register_rest_route(
+          'Voxel/v1',
+          '/profilee/(?P<user_id>\d+)',
+          array(
+              'methods' => 'GET',
+              'callback' => array($this, 'getall'),
+          )
+      );
+    }
+    function getall($request) {
+      $user_id = $request->get_param('user_id');// Get the user ID from the request
+      
+      $listings = $this->get_listings_for_user($user_id);
+
+      return rest_ensure_response($listings);
+    }
+    function get_listings_for_user($user_id) {
+      global $wpdb;
+        // $args = array(
+        //     'post_type' => 'places',
+        //     'post_author'=> $user_id,
+        //      'posts_per_page' => -1,
+        // );
+        // $listings_query = new \WP_Query($args);
+        // var_dump($listings_query->request);
+        // die;
+        $query = "SELECT *
+                  FROM wp_posts
+                  WHERE 1=1
+                      AND wp_posts.post_type = 'events'
+                      AND wp_posts.post_author = $user_id
+                      AND wp_posts.post_status = 'publish'
+                  ORDER BY wp_posts.post_date DESC";
+        $results = $wpdb->get_results( $query );
+        $listings = array();
+        foreach ($results as $result) {
+          $featured_image_id = get_post_thumbnail_id($result->ID);
+          if ($featured_image_id) {
+              $featured_image_data = wp_get_attachment_image_src($featured_image_id, 'full');
+              if (is_array($featured_image_data)) {
+                  $result->featured_image_url = $featured_image_data[0];
+              }
+          }
+          $profile_logo = get_post_meta($result->ID, 'logo', true);
+          if ($profile_logo) {
+              $result->profile_logo_url = wp_get_attachment_url($profile_logo);
+          }
+          $listings[] = $result;
+      }
+      
+      return $listings;
+       
+    }
+}
+
+$profilee = new profilee();
+
+class postst{
+  function __construct() {
+    add_action('rest_api_init', array($this, 'postst'));
+  }
+    function postst() {
+      register_rest_route(
+          'Voxel/v1',
+          '/postst/(?P<id>\d+)',
+          array(
+              'methods' => 'POST',
+              'callback' => array($this, 'changes'),
+          )
+      );
+    }
+  function changes($request){
+    $id = $request->get_param('id');
+    $post = get_post($id);
+    if (!$post) {
+      return new \WP_Error('post_not_found', 'Post not found', array('status' => 404));
+    }
+    $new_status = $post->post_status === 'publish' ? 'unpublished' : 'publish';
+
+        $updated_post = wp_update_post(array(
+            'ID' => $id,
+            'post_status' => $new_status,
+        ), true);
+
+        if (is_wp_error($updated_post)) {
+            return new WP_Error('post_update_error', 'Error updating post', array('status' => 500));
+        }
+
+        return rest_ensure_response(array('message' => 'Post status updated', 'new_status' => $new_status));
+  }
+}
+$postst= new postst();
