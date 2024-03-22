@@ -324,7 +324,7 @@ class deleteu{
       }
       return array('message' => 'User deleted successfully');
     } catch (Exception $e) {
-      return new WP_Error('user_delete_failed', $e->getMessage(), array('status' => 500));
+      return new \WP_Error('user_delete_failed', $e->getMessage(), array('status' => 500));
     }
   }
 }
@@ -540,7 +540,7 @@ class postget{
     $post = get_post($post_id);
 
     if (!$post || $post->post_status !== 'publish') {
-        return new WP_Error('invalid_post_id', 'Invalid post ID', array('status' => 404));
+        return new \WP_Error('invalid_post_id', 'Invalid post ID', array('status' => 404));
     }
 
     $featured_image_url = '';
@@ -643,7 +643,35 @@ foreach ($timeline_data as $entry) {
     );
 }
 }
+$taxonomies = get_post_taxonomies($post);
+// var_dump($taxonomies);
+// die;
 
+    // Initialize array to store taxonomy data
+    $taxonomy_data = array();
+
+    foreach ($taxonomies as $taxonomy) {
+        // Get terms for each taxonomy
+        $terms = get_the_terms($post_id, $taxonomy);
+          
+        if ($terms && !is_wp_error($terms)) {
+            $taxonomy_data[$taxonomy] = array();
+
+            foreach ($terms as $term) {
+                // Get term data
+                $term_data = array(
+                    'id' => $term->term_id,
+                    'name' => $term->name,
+                    'slug' => $term->slug,
+                   // 'description' => $term->description,
+                );
+
+                $taxonomy_data[$taxonomy][] = $term_data;
+            }
+        }
+    }
+    // var_dump($taxonomy_data);
+    // die;
 // Convert the associative array into a simple indexed array
 $timeline_entries = array_values($timeline_entries);
     foreach ($meta_data as $key => $value) {
@@ -658,6 +686,7 @@ $timeline_entries = array_values($timeline_entries);
         'gallery_images' => $gallery_images,
         'meta_data' => $meta_data,
         'timeline_entries' => $timeline_entries,
+        'taxonomy_data'=>$taxonomy_data,
     );
 
     return rest_ensure_response($data);
