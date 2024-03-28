@@ -1662,45 +1662,45 @@ class searchpl {
   function searchpl() {
       register_rest_route(
           'Voxel/v1',
-          '/searchpl/(?P<params>.+)',
+          '/searchpl',
           array(
               'methods' => 'GET',
               'callback' => array($this, 'getall'),
           )
       );
   }
-
-  function format_param($param) {
-      // Remove special characters
-      $param = preg_replace('/[^a-zA-Z0-9-]/', '', $param);
-      
-      // Convert to lowercase and replace spaces with hyphens
-      $param = strtolower(str_replace(' ', '-', $param));
-
-      return $param;
-  }
-
   function getall($request) {
-      $params = $request->get_param('params');
-      $parameters = explode('/', $params);
-
-      $cities = array();
-      $categories = array();
-      $amenities = array();
-      
-      foreach ($parameters as $param) {
-    
-          if (!empty($param)) {
-              if (taxonomy_exists('city') && term_exists($param, 'city')) {
-                  $cities[] = $param;
-              } elseif (taxonomy_exists('places_category') && term_exists($param, 'places_category')) {
-                  $categories[] = $param;
-              } elseif (taxonomy_exists('amenities') && term_exists($param, 'amenities')) {
-                  $amenities[] = $param;
-              }
-          }
+      $params = $request->get_json_params();
+      // $params = $request->get_param('params');
+      // $parameters = explode('/', $params);
+       $cities = $params['cities'] ?? array();
+       $categories = $params['categories'] ?? array();
+       $amenities = $params['amenities'] ?? array();
+      // $cities = isset($params['cities']) ? explode(',', $params['cities']) : array();
+      // $categories = isset($params['categories']) ? explode(',', $params['categories']) : array();
+      // $amenities = isset($params['amenities']) ? explode(',', $params['amenities']) : array();
+      // foreach ($parameters as $param) {
+      //     if (!empty($param)) {
+      //         if (taxonomy_exists('city') && term_exists($param, 'city')) {
+      //             $cities[] = $param;
+      //         } elseif (taxonomy_exists('places_category') && term_exists($param, 'places_category')) {
+      //             $categories[] = $param;
+      //         } elseif (taxonomy_exists('amenities') && term_exists($param, 'amenities')) {
+      //             $amenities[] = $param;
+      //         }
+      //     }
+      // }
+      if (count($cities) === 1 && strpos($cities[0], ',') !== false) {
+        $cities = explode(',', $cities[0]);
       }
-      // Build the query arguments based on the provided parameters
+      $categories = $params['categories'] ?? array();
+      if (count($categories) === 1 && strpos($categories[0], ',') !== false) {
+        $categories = explode(',', $categories[0]);
+      }
+      $amenities = $params['amenities'] ?? array();
+      if (count($amenities) === 1 && strpos($amenities[0], ',') !== false) {
+        $amenities = explode(',', $amenities[0]);
+      }
       $args = array(
           'post_type' => 'places', // Adjust post type as needed
           'post_status' => 'publish',
@@ -1736,14 +1736,9 @@ class searchpl {
               'operator' => 'IN',
           );
       }
-
-      // Perform the query
       $query = new \WP_Query($args);
-
-      // Prepare results
+       // Prepare results
       $results = array();
-      // var_dump($query->request);
-      // die;
       if ($query->have_posts()) {
           while ($query->have_posts()) {
               $query->the_post();
@@ -1753,15 +1748,53 @@ class searchpl {
                   );
                   $thumbnail_id = get_post_thumbnail_id();
                   $thumbnail = wp_get_attachment_image_src($thumbnail_id, 'thumbnail');
+                  
                   if ($thumbnail) {
                       $post_data['thumbnail'] = $thumbnail[0];
                   }
                   $logo_id = get_post_meta(get_the_ID(), 'logo', true);
                   if ($logo_id) {
-                      $logo = wp_get_attachment_image_src($logo_id, 'full');
-                      if ($logo) {
-                          $post_data['logo'] = $logo[0];
-                      }
+                    $logo = wp_get_attachment_image_src($logo_id, 'full');
+                    if ($logo) {
+                        $post_data['logo'] = $logo[0];
+                    }
+                  }
+                  $text= get_post_meta(get_the_ID(), 'text', true);
+                  if($text){
+                    $post_data['text']=$text;
+                  }
+                  $address = get_post_meta(get_the_ID(), 'location', true);
+                  $address_data = json_decode($address, true);
+                  $address = isset($address_data['address']) ? $address_data['address'] : '';
+                  if($address){
+                   $post_data['address']= $address; 
+                  }
+                  $hours=get_post_meta(get_the_ID(), 'work-hours', true);
+                  $opening_hours = json_decode($hours, true);
+                  if (!empty($opening_hours) && is_array($opening_hours)) {
+                   foreach ($opening_hours as $hours_data) {
+                       $days = $hours_data['days'] ?? array();
+                       $hours = $hours_data['hours'] ?? array();
+                         foreach ($days as $day) {
+                           if (!isset($post_data[$day])) {
+                               $post_data[$day] = array();
+                           }
+                           if (!empty($hours)) {
+                              foreach ($hours as $hour) {
+                               $post_data[$day][] = $hour['from'] . '-' . $hour['to'];
+                           }
+                           }
+                           else {
+                            $post_data[$day][] = 'Open all day';
+                           }
+                       }
+                   }
+                  }
+                  $price_range=wp_get_post_terms(get_the_ID(), 'price_range', array( 'fields' => 'all' ) );
+                  if(!is_wp_error($price_range) && !empty($price_range)){
+                    $price_range = $price_range[0];
+                    $post_data['price_name']=$price_range->name;
+                    $post_data['price_slug']=$price_range->slug;
                   }
                   $results[] = $post_data;
           }
@@ -1777,3 +1810,117 @@ class searchpl {
 }
 
 $searchpl = new searchpl();
+
+class searchev{
+
+  function __construct() {
+    add_action('rest_api_init', array($this, 'searchev'));
+}
+
+function searchev() {
+  register_rest_route(
+      'Voxel/v1',
+      '/searchev',
+      array(
+          'methods' => 'GET',
+          'callback' => array($this, 'getall'),
+          'args' => array(
+              'from_date' => array(
+                  'required' => false,
+                  'validate_callback' => function($param, $request, $key) {
+                      return (bool) strtotime($param);
+                  },
+                  'sanitize_callback' => 'sanitize_text_field',
+              ),
+              'to_date' => array(
+                  'required' => false,
+                  'validate_callback' => function($param, $request, $key) {
+                      return (bool) strtotime($param);
+                  },
+                  'sanitize_callback' => 'sanitize_text_field',
+              ),
+              'city' => array(
+                'required' => false,
+                'validate_callback' => function($param, $request, $key) {
+                    return taxonomy_exists('city');
+                },
+                'sanitize_callback' => 'sanitize_text_field',
+            ),
+          ),
+      )
+  );
+}
+function getall($request){
+  $from_date = $request->get_param('from_date');
+  $to_date = $request->get_param('to_date');
+  $city = $request->get_param('city');
+
+    // Get the 'city' parameter
+    $city = !empty($params['city']) ? $params['city'] : '';
+    // Initialize query arguments
+    $args = array(
+        'post_type' => 'events', 
+        'posts_per_page' => -1, // Retrieve all posts
+        'post_status' => 'publish',
+        'tax_query' => array(
+            'relation' => 'AND', // Match all taxonomy criteria
+        ),
+        'meta_query' => array(
+            'relation' => 'AND',
+        ),
+    );
+
+    // Check if 'to' category is set
+    // if (!empty($params['to'])) {
+    //     $args['tax_query'][] = array(
+    //         'taxonomy' => 'events-category', // Change 'category' to your actual taxonomy name
+    //         'field' => 'slug',
+    //         'terms' => $params['to'],
+    //     );
+    // }
+
+    if (!empty($city)) {
+      $args['tax_query'][] = array(
+          'taxonomy' => 'city',
+          'field' => 'slug',
+          'terms' => $city,
+      );
+    }
+
+  // Check if 'from_date' and 'to_date' are set
+  if (!empty($from_date) && !empty($to_date)) {
+      $args['meta_query'][] = array(
+          'key' => 'event_date',
+          'value' => array($from_date, $to_date),
+          'compare' => 'BETWEEN',
+          'type' => 'DATE',
+      );
+    }
+
+    // Perform the query
+    $query = new \WP_Query($args);
+    $results = array();
+
+    // Loop through query results
+    if ($query->have_posts()) {
+        while ($query->have_posts()) {
+            $query->the_post();
+
+            // Customize the data you want to retrieve for each event
+            $event_data = array(
+                'id' => get_the_ID(),
+                'title' => get_the_title(),
+                'content' => get_the_content(),
+                // Add more data as needed
+            );
+
+            $results[] = $event_data;
+        }
+        wp_reset_postdata();
+    }
+
+    // Return results
+    return rest_ensure_response($results);
+}
+}
+$searchev = new searchev();
