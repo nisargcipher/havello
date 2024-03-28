@@ -299,6 +299,43 @@ class login{
 }
 $user = new login();
 
+class getallu{
+  function __construct()
+  {
+    add_action( 'rest_api_init', array( $this, 'getallu') );
+  }
+  function getallu()
+  {
+    register_rest_route(
+      'Voxel/v1',
+      '/getallu',
+      array(
+        'methods' => 'GET',
+        'callback' => array($this, 'getall'),
+       )
+    );
+  }
+  function getall($request){
+    $users = get_users();
+    $user_data = array();
+    foreach ($users as $user) {
+        $user_id = $user->ID;
+        $user_name = $user->display_name;
+        $profile_pic_url = get_avatar_url($user_id);
+
+        $user_data[] = array(
+            'id' => $user_id,
+            'name' => $user_name,
+            'profile_pic_url' => $profile_pic_url,
+        );
+    }
+
+    return rest_ensure_response($user_data);
+  }
+}
+$getallu =new getallu();
+
+
 class deleteu{
   function __construct()
   {
@@ -569,6 +606,9 @@ class postget{
     }
     $meta_data = array();
     $meta_data = get_post_meta($post->ID);
+    foreach ($meta_data as $key => $value) {
+      $meta_data[$key] = maybe_unserialize($value[0]);
+    }
     global $wpdb;
 $query = "
     SELECT 
@@ -670,13 +710,38 @@ $taxonomies = get_post_taxonomies($post);
             }
         }
     }
-    // var_dump($taxonomy_data);
-    // die;
 // Convert the associative array into a simple indexed array
-$timeline_entries = array_values($timeline_entries);
-    foreach ($meta_data as $key => $value) {
-      $meta_data[$key] = maybe_unserialize($value[0]);
+  $timeline_entries = array_values($timeline_entries);
+  $query = $wpdb->prepare("
+        SELECT *
+        FROM {$wpdb->prefix}voxel_relations
+        WHERE child_id = %d
+    ",$post_id);
+    
+    $related_parent_ids = $wpdb->get_results($query, ARRAY_A);
+
+    $related_posts = array();
+    foreach ($related_parent_ids as $related_parent_id) {
+      $parent_post = get_post($related_parent_id['parent_id']);
+
+      if ($parent_post && $parent_post->post_status === 'publish') {
+          $profile_image_url = '';
+          $profile_image_id = get_post_meta($parent_post->ID, 'logo', true);
+          if ($profile_image_id) {
+              $profile_image_url = wp_get_attachment_url($profile_image_id);
+          }
+
+          $related_posts[] = array(
+              'id' => $parent_post->ID,
+              'title' => $parent_post->post_title,
+              //'content' => $parent_post->post_content,
+              'profile_image_url' => $profile_image_url,
+              'realtion_key' =>$related_parent_id['relation_key'],
+              // Add more fields as needed
+          );
+      }
     }
+   
     $data = array(
         'id' => $post->ID,
         'title' => $post->post_title,
@@ -687,6 +752,7 @@ $timeline_entries = array_values($timeline_entries);
         'meta_data' => $meta_data,
         'timeline_entries' => $timeline_entries,
         'taxonomy_data'=>$taxonomy_data,
+        'Posted by'=>$related_posts,
     );
 
     return rest_ensure_response($data);
@@ -1587,3 +1653,127 @@ function your_custom_search_function($search_query) {
 }
 }
 $search = new search();
+
+class searchpl {
+  function __construct() {
+      add_action('rest_api_init', array($this, 'searchpl'));
+  }
+
+  function searchpl() {
+      register_rest_route(
+          'Voxel/v1',
+          '/searchpl/(?P<params>.+)',
+          array(
+              'methods' => 'GET',
+              'callback' => array($this, 'getall'),
+          )
+      );
+  }
+
+  function format_param($param) {
+      // Remove special characters
+      $param = preg_replace('/[^a-zA-Z0-9-]/', '', $param);
+      
+      // Convert to lowercase and replace spaces with hyphens
+      $param = strtolower(str_replace(' ', '-', $param));
+
+      return $param;
+  }
+
+  function getall($request) {
+      $params = $request->get_param('params');
+      $parameters = explode('/', $params);
+
+      $cities = array();
+      $categories = array();
+      $amenities = array();
+      
+      foreach ($parameters as $param) {
+    
+          if (!empty($param)) {
+              if (taxonomy_exists('city') && term_exists($param, 'city')) {
+                  $cities[] = $param;
+              } elseif (taxonomy_exists('places_category') && term_exists($param, 'places_category')) {
+                  $categories[] = $param;
+              } elseif (taxonomy_exists('amenities') && term_exists($param, 'amenities')) {
+                  $amenities[] = $param;
+              }
+          }
+      }
+      // Build the query arguments based on the provided parameters
+      $args = array(
+          'post_type' => 'places', // Adjust post type as needed
+          'post_status' => 'publish',
+          'posts_per_page' => -1, // Retrieve all posts that match the criteria
+          'tax_query' => array(
+              'relation' => 'AND', // Match all taxonomy criteria
+          ),
+      );
+
+      if (!empty($cities)) {
+          $args['tax_query'][] = array(
+              'taxonomy' => 'city', 
+              'field' => 'slug',
+              'terms' => $cities,
+              'operator' => 'IN',
+          );
+      }
+
+      if (!empty($categories)) {
+          $args['tax_query'][] = array(
+              'taxonomy' => 'places_category', 
+              'field' => 'slug',
+              'terms' => $categories,
+              'operator' => 'IN',
+          );
+      }
+
+      if (!empty($amenities)) {
+          $args['tax_query'][] = array(
+              'taxonomy' => 'amenities',
+              'field' => 'slug',
+              'terms' => $amenities,
+              'operator' => 'IN',
+          );
+      }
+
+      // Perform the query
+      $query = new \WP_Query($args);
+
+      // Prepare results
+      $results = array();
+      // var_dump($query->request);
+      // die;
+      if ($query->have_posts()) {
+          while ($query->have_posts()) {
+              $query->the_post();
+               $post_data = array(
+                  'id' => get_the_ID(),
+                  'title' => get_the_title(),
+                  );
+                  $thumbnail_id = get_post_thumbnail_id();
+                  $thumbnail = wp_get_attachment_image_src($thumbnail_id, 'thumbnail');
+                  if ($thumbnail) {
+                      $post_data['thumbnail'] = $thumbnail[0];
+                  }
+                  $logo_id = get_post_meta(get_the_ID(), 'logo', true);
+                  if ($logo_id) {
+                      $logo = wp_get_attachment_image_src($logo_id, 'full');
+                      if ($logo) {
+                          $post_data['logo'] = $logo[0];
+                      }
+                  }
+                  $results[] = $post_data;
+          }
+          wp_reset_postdata();
+      } else {
+          $results[] = array(
+              'message' => 'No places found for the given criteria.',
+          );
+      }
+
+      return rest_ensure_response($results);
+  }
+}
+
+$searchpl = new searchpl();
