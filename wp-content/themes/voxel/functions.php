@@ -1670,12 +1670,15 @@ class searchpl {
       );
   }
   function getall($request) {
-      $params = $request->get_json_params();
+     $params = $request->get_json_params();
       // $params = $request->get_param('params');
       // $parameters = explode('/', $params);
        $cities = $params['cities'] ?? array();
        $categories = $params['categories'] ?? array();
        $amenities = $params['amenities'] ?? array();
+      // $cities = array();
+      // $categories= array();
+      // $amenities = array();
       // $cities = isset($params['cities']) ? explode(',', $params['cities']) : array();
       // $categories = isset($params['categories']) ? explode(',', $params['categories']) : array();
       // $amenities = isset($params['amenities']) ? explode(',', $params['amenities']) : array();
@@ -1693,11 +1696,9 @@ class searchpl {
       if (count($cities) === 1 && strpos($cities[0], ',') !== false) {
         $cities = explode(',', $cities[0]);
       }
-      $categories = $params['categories'] ?? array();
       if (count($categories) === 1 && strpos($categories[0], ',') !== false) {
         $categories = explode(',', $categories[0]);
       }
-      $amenities = $params['amenities'] ?? array();
       if (count($amenities) === 1 && strpos($amenities[0], ',') !== false) {
         $amenities = explode(',', $amenities[0]);
       }
@@ -1812,8 +1813,7 @@ class searchpl {
 $searchpl = new searchpl();
 
 class searchev{
-
-  function __construct() {
+function __construct() {
     add_action('rest_api_init', array($this, 'searchev'));
 }
 
@@ -1824,41 +1824,24 @@ function searchev() {
       array(
           'methods' => 'GET',
           'callback' => array($this, 'getall'),
-          'args' => array(
-              'from_date' => array(
-                  'required' => false,
-                  'validate_callback' => function($param, $request, $key) {
-                      return (bool) strtotime($param);
-                  },
-                  'sanitize_callback' => 'sanitize_text_field',
-              ),
-              'to_date' => array(
-                  'required' => false,
-                  'validate_callback' => function($param, $request, $key) {
-                      return (bool) strtotime($param);
-                  },
-                  'sanitize_callback' => 'sanitize_text_field',
-              ),
-              'city' => array(
-                'required' => false,
-                'validate_callback' => function($param, $request, $key) {
-                    return taxonomy_exists('city');
-                },
-                'sanitize_callback' => 'sanitize_text_field',
-            ),
-          ),
+          
       )
   );
 }
 function getall($request){
-  $from_date = $request->get_param('from_date');
-  $to_date = $request->get_param('to_date');
-  $city = $request->get_param('city');
+  $params = $request->get_json_params();
+  $city = $params['city'] ?? array();
+  $amenities = $params['amenities'] ?? array();
+  $from_date = $params['from_date'] ?? '';
+  $to_date = $params['to_date'] ?? '';
 
-    // Get the 'city' parameter
-    $city = !empty($params['city']) ? $params['city'] : '';
-    // Initialize query arguments
-    $args = array(
+     if (count($city) === 1 && strpos($city[0], ',') !== false) {
+     $city = explode(',', $city[0]);
+     }
+     if (count($amenities) === 1 && strpos($amenities[0], ',') !== false) {
+      $amenities = explode(',', $amenities[0]);
+     }
+     $args = array(
         'post_type' => 'events', 
         'posts_per_page' => -1, // Retrieve all posts
         'post_status' => 'publish',
@@ -1868,17 +1851,8 @@ function getall($request){
         'meta_query' => array(
             'relation' => 'AND',
         ),
-    );
-
-    // Check if 'to' category is set
-    // if (!empty($params['to'])) {
-    //     $args['tax_query'][] = array(
-    //         'taxonomy' => 'events-category', // Change 'category' to your actual taxonomy name
-    //         'field' => 'slug',
-    //         'terms' => $params['to'],
-    //     );
-    // }
-
+      );
+    
     if (!empty($city)) {
       $args['tax_query'][] = array(
           'taxonomy' => 'city',
@@ -1886,38 +1860,59 @@ function getall($request){
           'terms' => $city,
       );
     }
-
-  // Check if 'from_date' and 'to_date' are set
-  if (!empty($from_date) && !empty($to_date)) {
-      $args['meta_query'][] = array(
-          'key' => 'event_date',
-          'value' => array($from_date, $to_date),
-          'compare' => 'BETWEEN',
-          'type' => 'DATE',
-      );
-    }
-
-    // Perform the query
+    
     $query = new \WP_Query($args);
     $results = array();
-
-    // Loop through query results
     if ($query->have_posts()) {
-        while ($query->have_posts()) {
-            $query->the_post();
+      while ($query->have_posts()) {
+          $query->the_post();
+          $event_id = get_the_ID();
+          $thumbnail_id = '';
+          $thumbnail_id = get_post_thumbnail_id();
+          if ($thumbnail_id) {
+          $event_data['thumbnail']= wp_get_attachment_url($thumbnail_id);
+          }
+          // $thumbnail = wp_get_attachment_image_src($thumbnail_id, 'thumbnail');
+          // if ($thumbnail) {
+          // $event_data['thumbnail'] = $thumbnail[0];
+          // }
+          $logo_id = get_post_meta(get_the_ID(), 'logo', true);
+          if ($logo_id) {
+          $logo = wp_get_attachment_image_src($logo_id, 'full');
+          if ($logo) {
+          $event_data['logo'] = $logo[0];
+          }
+          }
+          $event_schedule = get_post_meta($event_id, 'event_date', true);
+          if (!empty($event_schedule)) {
+              $event_schedule = json_decode($event_schedule, true);
+              foreach ($event_schedule as $event_occurrence) {
+                  $start_date = strtotime($event_occurrence['start']);
+                  $end_date = strtotime($event_occurrence['end']);
 
-            // Customize the data you want to retrieve for each event
-            $event_data = array(
-                'id' => get_the_ID(),
-                'title' => get_the_title(),
-                'content' => get_the_content(),
-                // Add more data as needed
-            );
+                  if ($start_date >= strtotime($from_date) || $end_date <= strtotime($to_date)) {
+                      $event_data = array(
+                          'id' => $event_id,
+                          'title' => get_the_title(),
+                          'start_date' => $event_occurrence['start'],
+                          'end_date' => $event_occurrence['end'],
+                          'thumbnail'=>$event_data['thumbnail'],
+                          'logo'     => $event_data['logo']
+                          // Add more data as needed
+                      );
 
-            $results[] = $event_data;
-        }
-        wp_reset_postdata();
+                      $results[] = $event_data;
+                  }
+              }
+          }
+      }
+      wp_reset_postdata();
     }
+   else {
+    $results[] = array(
+        'message' => 'No places found for the given criteria.',
+    );
+  }
 
     // Return results
     return rest_ensure_response($results);
