@@ -1748,10 +1748,9 @@ class searchpl {
                   'title' => get_the_title(),
                   );
                   $thumbnail_id = get_post_thumbnail_id();
-                  $thumbnail = wp_get_attachment_image_src($thumbnail_id, 'thumbnail');
-                  
-                  if ($thumbnail) {
-                      $post_data['thumbnail'] = $thumbnail[0];
+                  //$thumbnail = wp_get_attachment_image_src($thumbnail_id, 'thumbnail');
+                  if ($thumbnail_id) {
+                    $post_data['thumbnail'] = wp_get_attachment_url($thumbnail_id);
                   }
                   $logo_id = get_post_meta(get_the_ID(), 'logo', true);
                   if ($logo_id) {
@@ -1919,3 +1918,33 @@ function getall($request){
 }
 }
 $searchev = new searchev();
+
+class users{
+  function __construct() {
+    add_action('rest_api_init', array($this, 'users'));
+  }
+
+  function users() {
+  register_rest_route(
+      'Voxel/v1',
+      '/get_user_by_name/(?P<username>[\w-]+)',
+      array(
+          'methods' => 'GET',
+          'callback' => array($this, 'get'),
+          
+      )
+  );
+  }
+
+  function get($request) {
+  $username = $request->get_param('username');
+  $user = get_user_by('login', $username);
+  
+  if ($user) {
+      return $user->ID;
+  } else {
+      return new WP_Error('user_not_found', 'User not found', array('status' => 404));
+  }
+}
+}
+$users = new users();
