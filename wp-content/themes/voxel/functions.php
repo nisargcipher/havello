@@ -1927,7 +1927,7 @@ class users{
   function users() {
   register_rest_route(
       'Voxel/v1',
-      '/get_user_by_name/(?P<username>[\w-]+)',
+      '/users/(?P<username>[\w-]+)',
       array(
           'methods' => 'GET',
           'callback' => array($this, 'get'),
@@ -1935,16 +1935,141 @@ class users{
       )
   );
   }
-
   function get($request) {
-  $username = $request->get_param('username');
-  $user = get_user_by('login', $username);
-  
-  if ($user) {
-      return $user->ID;
-  } else {
-      return new WP_Error('user_not_found', 'User not found', array('status' => 404));
+    $username = $request->get_param('username');
+    $users = get_users(array(
+      'search'         => '*' . $username . '*',
+      'search_columns' => array( 'user_login', 'user_nicename', 'display_name', 'user_email' ),
+    ));
+
+    $users_data = array();
+    foreach ($users as $user) {
+      $profile_pic_url = get_avatar_url($user);
+      $user_data = array(
+        'id' => $user->ID,
+        'name' => $user->display_name,
+        'profile_pic_url' => $profile_pic_url,
+      );
+      $users_data[] = $user_data;
+    }
+
+    if (!empty($users_data)) {
+      return $users_data;
+    } else {
+      return new \WP_Error('user_not_found', 'User not found', array('status' => 404));
+    }
   }
 }
-}
 $users = new users();
+
+class getblog{
+  function __construct() {
+    add_action('rest_api_init', array($this, 'getblog'));
+  }
+
+  function getblog() {
+  register_rest_route(
+      'Voxel/v1',
+      '/allgetblog',
+      array(
+          'methods' => 'GET',
+          'callback' => array($this, 'get'),
+          
+      )
+  );
+  }
+  function get($request) {
+    $posts = get_posts(array(
+      'post_type' => 'post',
+      'post_status' => 'publish', 
+      'posts_per_page' => -1, 
+      ));
+
+  if (empty($posts)) {
+      return new \WP_Error('no_posts', 'No posts found', array('status' => 404));
+  }
+  $data = array();
+  foreach ($posts as $post) {
+    $author_id = $post->post_author;
+    $author_avatar_url = get_avatar_url($author_id, array('size' => 96)); 
+
+    $thumbnail_url = get_the_post_thumbnail_url($post->ID, 'full');
+    $post_meta = get_post_meta($post->ID);
+    $data[] = array(
+        'id' => $post->ID,
+        'title' => $post->post_title,
+        'content' => $post->post_content,
+        'thumbnail_url' => $thumbnail_url,
+        'author_id' => $author_id,
+        'author_avatar_url' => $author_avatar_url,
+        'meta' => $post_meta,
+    );
+  }
+
+  return rest_ensure_response($data);
+  }
+}
+$getblog= new getblog();
+ 
+class filterblog{
+  function __construct() {
+    add_action('rest_api_init', array($this, 'filterblog'));
+  }
+
+  function filterblog() {
+  register_rest_route(
+      'Voxel/v1',
+      '/filterblog',
+      array(
+          'methods' => 'GET',
+          'callback' => array($this, 'get'),
+          
+      )
+  );
+  }
+  function get($request){
+    $params = $request->get_params();
+    $taxonomy = 'category'; 
+    $term_slug = isset($params['term_slug']) ? $params['term_slug'] : '';
+
+    $args = array(
+        'post_type' => 'post',
+        'post_status' => 'publish',
+        'posts_per_page' => -1,
+        'tax_query' => array(
+            array(
+                'taxonomy' => $taxonomy,
+                'field' => 'slug',
+                'terms' => $term_slug,
+            ),
+        ),
+    );
+
+    $posts = get_posts($args);
+
+    if (empty($posts)) {
+        return new \WP_Error('no_posts', 'No posts found', array('status' => 404));
+    }
+
+    $data = array();
+    foreach ($posts as $post) {
+        $author_id = $post->post_author;
+        $author_avatar_url = get_avatar_url($author_id, array('size' => 96));
+
+        $thumbnail_url = get_the_post_thumbnail_url($post->ID, 'full');
+        $post_meta = get_post_meta($post->ID);
+        $data[] = array(
+            'id' => $post->ID,
+            'title' => $post->post_title,
+            'content' => $post->post_content,
+            'thumbnail_url' => $thumbnail_url,
+            'author_id' => $author_id,
+            'author_avatar_url' => $author_avatar_url,
+            'meta' => $post_meta,
+        );
+    }
+
+    return rest_ensure_response($data);
+  }
+}
+$filterblog= new filterblog();
